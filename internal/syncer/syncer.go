@@ -37,6 +37,21 @@ func (s *Syncer) RunOnce(ctx context.Context, DropboxPath string) error {
 	}
 	log.Println("dropbox files found:", len(desiredKeys))
 	s3UploadedFiles := 0
+
+	testFileName := ""
+	testFileValue := desiredKeys[testFileName]
+
+	rc, _, err := s.Dropbox.Download(ctx, testFileValue.FullPath)
+	if err != nil {
+		return fmt.Errorf("download dropbox %s: %w", testFileValue.FullPath, err)
+	}
+	defer rc.Close()
+
+	// err = s.S3.Put(ctx, testFileValue.FullPath, rc, -1, testFileValue.ServerModified)
+	// if err != nil {
+	// 	return fmt.Errorf("put s3 %s: %w", testFileValue.FullPath, err)
+	// }
+
 	// // Upload or update files
 	// for key, f := range desiredKeys {
 	// 	head, _ := s.S3.Head(ctx, key)
