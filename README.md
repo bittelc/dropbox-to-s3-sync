@@ -9,10 +9,13 @@ This application provides a simple and efficient way to copy files from Dropbox 
 ## Features
 
 - One-time, one-way synchronization from Dropbox to S3
+- Intelligent sync: only uploads new/changed files based on modification time and size
+- Automatic cleanup: removes files from S3 that no longer exist in Dropbox
 - Support for transferring file hierarchy and preserving structure
 - Detailed logging for sync operations
 - Efficient handling of large files and directories
 - Support for Dropbox Business/Team accounts
+- Uses refresh tokens for automatic access token generation
 
 ## Requirements
 
@@ -26,14 +29,14 @@ This application provides a simple and efficient way to copy files from Dropbox 
 Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/dropbox-to-s3-sync.git
+git clone https://github.com/YOUR_USERNAME/dropbox-to-s3-sync.git
 cd dropbox-to-s3-sync
 ```
 
-Build the application:
+Install dependencies:
 
 ```bash
-go build -o dropbox-s3-sync ./cmd/sync
+go mod tidy
 ```
 
 ## Configuration
@@ -44,9 +47,11 @@ The application requires the following environment variables to be set:
 
 | Variable | Description |
 |----------|-------------|
-| `DROPBOX_ACCESS_TOKEN` | Your Dropbox API access token |
+| `DROPBOX_REFRESH_TOKEN` | Your Dropbox API refresh token |
+| `DROPBOX_APP_KEY` | Your Dropbox app key |
+| `DROPBOX_APP_SECRET` | Your Dropbox app secret |
 | `DROPBOX_SOURCE_PATH` | Path to the Dropbox directory to sync (e.g., `/Photos`) |
-| `DROPBOX_ROOT_NS` | Dropbox namespace ID for team accounts (see authentication section) |
+| `DROPBOX_SOURCE_ROOT_NS` | Dropbox namespace ID for team accounts (see authentication section) |
 | `AWS_ACCESS_KEY_ID` | Your AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | Your AWS secret key |
 | `AWS_REGION` | AWS region of your S3 bucket (e.g., `us-west-2`) |
@@ -66,7 +71,7 @@ You can set these in your environment or create a `.env` file at the root of the
 
 1. Create a Dropbox app in the [Dropbox Developer Console](https://www.dropbox.com/developers/apps)
 2. Generate an access token from the app settings page
-3. Set the `DROPBOX_ACCESS_TOKEN` environment variable with this token
+3. Set the `DROPBOX_REFRESH_TOKEN`, `DROPBOX_APP_KEY`, and `DROPBOX_APP_SECRET` environment variables
 4. Leave `DROPBOX_SOURCE_ROOT_NS` blank
 
 ### For Dropbox Business/Team Accounts
@@ -123,7 +128,7 @@ Dropbox for Business requires a horribly complex authentication process:
        -H "Dropbox-API-Select-User: $DROPBOX_MEMBER_ID" | jq
      ```
    - Find the namespace ID in the response
-   - Set this value as `DROPBOX_ROOT_NS`
+   - Set this value as `DROPBOX_SOURCE_ROOT_NS`
 
 7. **Validate Access**
    - Test your setup with:
@@ -141,7 +146,7 @@ Dropbox for Business requires a horribly complex authentication process:
 Run the application to perform a one-time sync:
 
 ```bash
-./dropbox-s3-sync
+go run ./cmd/sync
 ```
 
 Example output:
@@ -151,15 +156,6 @@ Example output:
 2023-07-15T10:30:45 Configuration loaded successfully.
 2023-07-15T10:30:45 Starting one-time Dropbox to S3 sync: source='/Photos' bucket='my-backup-bucket' prefix='dropbox-backup/' region='us-west-2'
 2023-07-15T10:32:15 Sync completed successfully
-```
-
-## Docker Usage
-
-You can also run the application in Docker:
-
-```bash
-docker build -t dropbox-s3-sync .
-docker run --env-file .env dropbox-s3-sync
 ```
 
 ## Common Use Cases
