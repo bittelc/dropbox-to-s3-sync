@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"dropbox-to-s3-sync/internal/dropbox"
 	s3client "dropbox-to-s3-sync/internal/s3"
@@ -38,59 +39,45 @@ func (s *Syncer) RunOnce(ctx context.Context, DropboxPath string) error {
 	log.Println("dropbox files found:", len(desiredKeys))
 	s3UploadedFiles := 0
 
-	testFileName := ""
-	testFileValue := desiredKeys[testFileName]
-
-	rc, _, err := s.Dropbox.Download(ctx, testFileValue.FullPath)
-	if err != nil {
-		return fmt.Errorf("download dropbox %s: %w", testFileValue.FullPath, err)
+	// Upload or update files
+	for key, f := range desiredKeys {
+		head, _ := s.S3.Head(ctx, key)
+		var needUpload bool = false
+		if head == nil {
+			needUpload = true
+		} else {
+			// Compare last modified and size
+			s3lm := time.Time{}
+			if head.LastModified != nil {
+				s3lm = *head.LastModified
+			}
+			var s3size int64 = 0
+			if head.ContentLength != nil {
+				s3size = *head.ContentLength
+			}
+			if f.ServerModified.After(s3lm) || f.Size != s3size {
+				needUpload = true
+			}
+		}
+		if needUpload {
+			if err := s.uploadFile(ctx, key, f); err != nil {
+				return err
+			}
+			s3UploadedFiles++
+		}
 	}
-	defer rc.Close()
-
-	// err = s.S3.Put(ctx, testFileValue.FullPath, rc, -1, testFileValue.ServerModified)
-	// if err != nil {
-	// 	return fmt.Errorf("put s3 %s: %w", testFileValue.FullPath, err)
-	// }
-
-	// // Upload or update files
-	// for key, f := range desiredKeys {
-	// 	head, _ := s.S3.Head(ctx, key)
-	// 	var needUpload bool = false
-	// 	if head == nil {
-	// 		needUpload = true
-	// 	} else {
-	// 		// Compare last modified and size
-	// 		s3lm := time.Time{}
-	// 		if head.LastModified != nil {
-	// 			s3lm = *head.LastModified
-	// 		}
-	// 		var s3size int64 = 0
-	// 		if head.ContentLength != nil {
-	// 			s3size = *head.ContentLength
-	// 		}
-	// 		if f.ServerModified.After(s3lm) || f.Size != s3size {
-	// 			needUpload = true
-	// 		}
-	// 	}
-	// 	if needUpload {
-	// 		log.Println("I would've theoretically uploaded:", key)
-	// if err := s.uploadFile(ctx, key, f); err != nil {
-	// 	return err
-	// }
-	// 	}
-	// }
 	// Delete extraneous keys under the prefix only
-	// existing, err := s.S3.ListKeys(ctx, s.S3Prefix)
-	// if err != nil {
-	// 	return fmt.Errorf("list s3 keys: %w", err)
-	// }
-	// for _, key := range existing {
-	// 	if _, ok := desiredKeys[key]; !ok {
-	// 		if err := s.S3.Delete(ctx, key); err != nil {
-	// 			return fmt.Errorf("delete s3 %s: %w", key, err)
-	// 		}
-	// 	}
-	// }
+	existing, err := s.S3.ListKeys(ctx, s.S3Prefix)
+	if err != nil {
+		return fmt.Errorf("list s3 keys: %w", err)
+	}
+	for _, key := range existing {
+		if _, ok := desiredKeys[key]; !ok {
+			if err := s.S3.Delete(ctx, key); err != nil {
+				return fmt.Errorf("delete s3 %s: %w", key, err)
+			}
+		}
+	}
 	log.Printf("Sync pass completed: %d files found in Dropbox, %d files uploaded to S3", len(dropBoxFiles), s3UploadedFiles)
 	return nil
 }
